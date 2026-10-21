@@ -1,0 +1,92 @@
+# PoC — reproduces the authorization-logic gap found in
+# google-gemini/gemini-cli's .github/workflows/release-patch-0-from-comment.yml
+#
+# SAFE TO RUN: this version dispatches only to poc-dummy-target.yml, which does
+# nothing but log who/what triggered it. No real release, no real secrets of
+# consequence, no npm publish. Use only in a fork or throwaway repo you own.
+#
+# Setup:
+#   1. Drop this file and poc-dummy-target.yml into .github/workflows/ on your fork.
+#   2. Merge any trivial PR with your main (owner) account.
+#   3. From a second account with NO collaborator access to this fork, comment
+#      "/patch" on that merged PR.
+#   4. Watch the Actions tab: "Get PR Status" and "Dispatch if Merged" will run
+#      and dispatch poc-dummy-target.yml, regardless of the commenter's lack of
+#      permission — that's the bug, reproduced safely.
+
+name: 'PoC: Release Patch (0) from Comment'
+
+on:
+  issue_comment:
+    types: ['created']
+
+jobs:
+  slash-command:
+    runs-on: 'ubuntu-latest'
+    # This is the ONLY gate in the real workflow: it checks account type,
+    # not repository permission or author association. Any human GitHub
+    # account satisfies it.
+    if: "github.event.comment.user.type == 'User' && github.event.comment.user.login != 'github-actions[bot]'"
+    permissions:
+      contents: 'write'
+      pull-requests: 'write'
+      actions: 'write'
+    steps:
+      - name: 'Checkout'
+        uses: 'actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8' # v5
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+
+      # In the real workflow, peter-evans/slash-command-dispatch runs here with
+      # permission: 'write', apparently intended to gate the command. Omitted
+      # here for simplicity — the point of this PoC is that the steps below
+      # don't consult its result anyway, so removing it changes nothing about
+      # what we're proving.
+
+      - name: 'Get PR Status'
+        id: 'pr_status'
+        if: "startsWith(github.event.comment.body, '/patch')"
+        env:
+          GH_TOKEN: '${{ secrets.GITHUB_TOKEN }}'
+        run: |
+          echo "No permission check happened before this step ran."
+          echo "Commenter: ${{ github.event.comment.user.login }}"
+          gh pr view "${{ github.event.issue.number }}" --json mergeCommit,state > pr_status.json
+          echo "MERGE_COMMIT_SHA=$(jq -r .mergeCommit.oid pr_status.json)" >> "$GITHUB_OUTPUT"
+          echo "STATE=$(jq -r .state pr_status.json)" >> "$GITHUB_OUTPUT"
+
+      - name: 'Dispatch if Merged (retargeted at dummy workflow)'
+        if: "steps.pr_status.outputs.STATE == 'MERGED'"
+        id: 'dispatch_patch'
+        uses: 'actions/github-script@00f12e3e20659f42342b1c0226afda7f7c042325'
+        env:
+          COMMENT_BODY: '${{ github.event.comment.body }}'
+          COMMENTER: '${{ github.event.comment.user.login }}'
+        with:
+          github-token: '${{ secrets.GITHUB_TOKEN }}'
+          script: |
+            const commenter = process.env.COMMENTER;
+            console.log(`Dispatching poc-dummy-target.yml on behalf of unauthorized commenter: ${commenter}`);
+
+            await github.rest.actions.createWorkflowDispatch({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              workflow_id: 'poc-dummy-target.yml',
+              ref: 'main',
+              inputs: {
+                triggered_by: commenter,
+                note: 'This proves an unauthorized commenter reached a privileged dispatch step.'
+              }
+            });
+
+      - name: 'Comment result'
+        if: "always() && startsWith(github.event.comment.body, '/patch')"
+        uses: 'peter-evans/create-or-update-comment@67dcc547d311b736a8e6c5c236542148a47adc3d'
+        with:
+          token: '${{ secrets.GITHUB_TOKEN }}'
+          issue-number: '${{ github.event.issue.number }}'
+          body: |
+            PoC ran. Check the Actions tab: if `poc-dummy-target.yml` was dispatched,
+            this confirms the unauthorized commenter reached a privileged step with
+            no permission check gating it.

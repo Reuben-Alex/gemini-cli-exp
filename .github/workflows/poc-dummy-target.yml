@@ -1,0 +1,33 @@
+# Harmless stand-in for release-patch-1-create-pr.yml.
+# Does nothing but log that it was reached and who/what dispatched it.
+# No checkout of release code, no npm, no publish, no secrets beyond
+# the default GITHUB_TOKEN used only to echo context.
+
+name: 'PoC: Dummy Release Target'
+
+on:
+  workflow_dispatch:
+    inputs:
+      triggered_by:
+        description: 'Who/what triggered this dispatch'
+        required: false
+        type: 'string'
+      note:
+        description: 'Free-text note from the triggering workflow'
+        required: false
+        type: 'string'
+
+jobs:
+  log-dispatch:
+    runs-on: 'ubuntu-latest'
+    permissions:
+      contents: 'read'
+    steps:
+      - name: 'Log that this ran'
+        run: |
+          echo "=== PoC dummy target was dispatched ==="
+          echo "Triggered by: ${{ inputs.triggered_by }}"
+          echo "Note: ${{ inputs.note }}"
+          echo "Run ID: ${{ github.run_id }}"
+          echo "This stands in for release-patch-1-create-pr.yml in the real"
+          echo "vulnerability chain — reaching this step is the proof."
