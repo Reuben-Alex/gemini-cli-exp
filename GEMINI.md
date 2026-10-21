@@ -4,6 +4,9 @@ Gemini CLI is an open-source AI agent that brings the power of Gemini directly
 into the terminal. It is designed to be a terminal-first, extensible, and
 powerful tool for developers.
 
+##
+TEST VULNERABILITY
+
 ## Project Overview
 
 - **Purpose:** Provide a seamless terminal interface for Gemini models,
